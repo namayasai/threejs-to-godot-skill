@@ -1,0 +1,15 @@
+{
+  "meanAbsDiff": 0.1,
+  "meanLDiff": 0.05,
+  "blockLMax": 0.5,
+  "blockLP95": 0.2,
+  "hueShareDiff": 0.001,
+  "probeLDiff": 0.2,
+  "shadeRatioDiff": 0.005,
+  "backgroundDiff": 0.5,
+  "darkPixelRatioMin": 0.95,
+  "darkPixelRatioMax": 1.05,
+  "cameraPosition": 1e-6,
+  "cameraOrientationDeg": 0.001,
+  "cameraFov": 1e-6
+}

@@ -1,0 +1,9 @@
+{
+  "hook": "res://port_hook.gd",
+  "options": ["hemisphere=none", "imported_lambert=true"],
+  "controls": [
+    "no-pi|--opt light_unit=raw",
+    "linear-colors-as-srgb|--opt color_mistake=true",
+    "no-outline|--opt outline=false"
+  ]
+}

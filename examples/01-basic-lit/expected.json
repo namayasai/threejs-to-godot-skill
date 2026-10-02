@@ -1,0 +1,176 @@
+{
+  "note": "Measured on one machine. Thresholds are the limits compare-shots.mjs enforces for this example; measured values show the margin.",
+  "versions": {
+    "three": "r185",
+    "browser": "Chromium 153.0.8010.12",
+    "godot": "4.7-stable (official)",
+    "rendering": "forward_plus/metal",
+    "platform": "darwin-arm64"
+  },
+  "lostFindings": [
+    "L06:lost",
+    "L08:lost",
+    "L09:lost",
+    "L13:lost"
+  ],
+  "thresholds": {
+    "meanAbsDiff": 0.5,
+    "meanLDiff": 0.25,
+    "blockLMax": 2,
+    "blockLP95": 0.5,
+    "hueShareDiff": 0.003,
+    "probeLDiff": 0.5,
+    "shadeRatioDiff": 0.01,
+    "backgroundDiff": 1,
+    "darkPixelRatioMin": 0.75,
+    "darkPixelRatioMax": 1.25,
+    "cameraPosition": 0.001,
+    "cameraOrientationDeg": 0.05,
+    "cameraFov": 0.01
+  },
+  "measured": {
+    "front": {
+      "cameraPosition": 0,
+      "cameraOrientationDeg": 0,
+      "cameraFov": 0,
+      "meanAbsDiff": 0.1192,
+      "meanLRef": 66.128,
+      "meanLTest": 66.1688,
+      "meanLDiff": 0.0408,
+      "blockLMax": 0.5881,
+      "blockLP95": 0.1848,
+      "hueShareDiff": 0.0005,
+      "probes": {
+        "lit-floor": {
+          "ref": 57.7147,
+          "test": 57.7147,
+          "diff": 0
+        },
+        "shade-floor": {
+          "ref": 30.0142,
+          "test": 30.0142,
+          "diff": 0
+        },
+        "cube-front": {
+          "ref": 35.3148,
+          "test": 35.3148,
+          "diff": 0
+        },
+        "cylinder-side": {
+          "ref": 43.3925,
+          "test": 43.4296,
+          "diff": 0.0371
+        }
+      },
+      "shadeRatio": {
+        "ref": 0.2432,
+        "test": 0.2432,
+        "diff": 0
+      },
+      "backgroundDiff": 0
+    },
+    "top": {
+      "cameraPosition": 0,
+      "cameraOrientationDeg": 0,
+      "cameraFov": 0,
+      "meanAbsDiff": 0.091,
+      "meanLRef": 56.0429,
+      "meanLTest": 56.0667,
+      "meanLDiff": 0.0238,
+      "blockLMax": 0.879,
+      "blockLP95": 0.0685,
+      "hueShareDiff": 0.0002,
+      "probes": {
+        "lit-floor": {
+          "ref": 57.4192,
+          "test": 57.4192,
+          "diff": 0
+        },
+        "shade-floor": {
+          "ref": 30.0142,
+          "test": 30.0142,
+          "diff": 0
+        },
+        "cube-top": {
+          "ref": 39.834,
+          "test": 39.834,
+          "diff": 0
+        },
+        "cylinder-top": {
+          "ref": 46.1488,
+          "test": 46.1488,
+          "diff": 0
+        }
+      },
+      "shadeRatio": {
+        "ref": 0.2462,
+        "test": 0.2462,
+        "diff": 0
+      }
+    },
+    "low-oblique": {
+      "cameraPosition": 0,
+      "cameraOrientationDeg": 0,
+      "cameraFov": 0,
+      "meanAbsDiff": 0.1041,
+      "meanLRef": 68.2629,
+      "meanLTest": 68.279,
+      "meanLDiff": 0.0161,
+      "blockLMax": 0.5868,
+      "blockLP95": 0.1648,
+      "hueShareDiff": 0.001,
+      "probes": {
+        "lit-floor": {
+          "ref": 57.8286,
+          "test": 57.8195,
+          "diff": 0.0091
+        },
+        "shade-floor": {
+          "ref": 30.0142,
+          "test": 30.0142,
+          "diff": 0
+        },
+        "cube-lit-face": {
+          "ref": 36.0081,
+          "test": 35.9592,
+          "diff": 0.0489
+        },
+        "cube-dark-face": {
+          "ref": 17.1714,
+          "test": 17.1714,
+          "diff": 0
+        },
+        "cylinder-lit": {
+          "ref": 40.6018,
+          "test": 40.6199,
+          "diff": 0.0181
+        }
+      },
+      "shadeRatio": {
+        "ref": 0.2421,
+        "test": 0.2422,
+        "diff": 0.0001
+      },
+      "backgroundDiff": 0
+    }
+  },
+  "referenceStability": {
+    "front": 0,
+    "top": 0,
+    "low-oblique": 0
+  },
+  "controls": {
+    "fov-plus-5": {
+      "failedShots": 3,
+      "worstCheckVsLimit": 500
+    },
+    "no-pi": {
+      "failedShots": 3,
+      "worstCheckVsLimit": 177.9189
+    },
+    "no-shadows": {
+      "failedShots": 3,
+      "worstCheckVsLimit": 76.0454
+    }
+  }
+}

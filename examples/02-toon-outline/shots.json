@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "size": { "width": 640, "height": 360 },
+  "shots": [
+    {
+      "id": "overview",
+      "purpose": "All four objects: toon steps, outlines, vertex colors, shadows",
+      "camera": { "position": [0, 2.5, 8], "lookAt": [0, 0.7, 0], "fov": 40, "near": 0.1, "far": 100 },
+      "probes": [
+        { "name": "lit-ground", "x": 330, "y": 330 },
+        { "name": "shade-ground", "x": 230, "y": 258 },
+        { "name": "sphere-lit", "x": 128, "y": 175 },
+        { "name": "cylinder-side", "x": 318, "y": 200 }
+      ],
+      "flags": { "flatBackground": true, "outline": true }
+    },
+    {
+      "id": "outline-closeup",
+      "purpose": "Close view of the box and the cylinder: outline thickness, hull at the box corners, vertex colors",
+      "camera": { "position": [1.6, 1.6, 4.2], "lookAt": [1.5, 0.8, 0], "fov": 40, "near": 0.1, "far": 100 },
+      "flags": { "outline": true }
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "note": "Measured on one machine, headless, 120 Hz fixed step. The hashes depend on the Godot build; the checks are about equality, not about the values.",
+  "engines": {
+    "jolt": {
+      "engine": "Jolt Physics",
+      "rest_sink_mm": "0.000",
+      "sleep_step": "57",
+      "roll_hash": "b99bbac961c8b0ef",
+      "distinct_hashes_in_20_fresh_worlds": "1",
+      "distinct_hashes_in_10_replacements_same_world": "1",
+      "slide_travel": "0.3998",
+      "reference": "0.3998",
+      "difference": "0.0000"
+    },
+    "godot-physics": {
+      "engine": "GodotPhysics3D",
+      "rest_sink_mm": "0.184",
+      "sleep_step": "57",
+      "roll_hash": "27daeab034f6c285",
+      "distinct_hashes_in_20_fresh_worlds": "1",
+      "distinct_hashes_in_10_replacements_same_world": "1",
+      "slide_travel": "0.4017",
+      "reference": "0.3998",
+      "difference": "0.0019"
+    }
+  }
+}

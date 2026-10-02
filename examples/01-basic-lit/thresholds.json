@@ -1,0 +1,10 @@
+{
+  "meanAbsDiff": 0.5,
+  "meanLDiff": 0.25,
+  "blockLMax": 2,
+  "blockLP95": 0.5,
+  "hueShareDiff": 0.003,
+  "probeLDiff": 0.5,
+  "shadeRatioDiff": 0.01,
+  "backgroundDiff": 1
+}

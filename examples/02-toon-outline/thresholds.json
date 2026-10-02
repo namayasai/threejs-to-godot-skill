@@ -1,0 +1,10 @@
+{
+  "meanAbsDiff": 3,
+  "meanLDiff": 1,
+  "blockLMax": 12,
+  "blockLP95": 5,
+  "hueShareDiff": 0.01,
+  "probeLDiff": 1.5,
+  "darkPixelRatioMin": 0.6,
+  "darkPixelRatioMax": 1.4
+}

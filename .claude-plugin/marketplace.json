@@ -1,0 +1,22 @@
+{
+  "name": "threejs-to-godot-skill",
+  "owner": {
+    "name": "namayasai"
+  },
+  "metadata": {
+    "description": "Agent skill for porting three.js scenes and games to Godot 4 and proving the port matches"
+  },
+  "plugins": [
+    {
+      "name": "threejs-to-godot-port",
+      "description": "Staged workflow, checks and tools for porting a three.js scene or game to Godot 4 (GDScript): freeze the reference, carry the shapes, rebuild materials, lights and environment, compare numerically, re-verify physics.",
+      "version": "0.1.0",
+      "license": "MIT",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/threejs-to-godot-port"
+      ]
+    }
+  ]
+}

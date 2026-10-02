@@ -1,0 +1,9 @@
+{
+  "hook": "",
+  "options": ["imported_lambert=true"],
+  "controls": [
+    "no-pi|--opt light_unit=raw",
+    "fov-plus-5|--opt fov_offset=5",
+    "no-shadows|--opt shadows=false"
+  ]
+}

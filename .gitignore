@@ -1,0 +1,10 @@
+node_modules/
+.godot/
+out/
+override.cfg
+*.tmp
+.DS_Store
+# Godot-side helper files are copied into each example project at run time
+examples/*/godot/tg_port/
+# per-run outputs of the examples
+examples/*/out/

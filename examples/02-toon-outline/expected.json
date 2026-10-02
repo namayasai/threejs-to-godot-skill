@@ -1,0 +1,104 @@
+{
+  "note": "Measured on one machine. Thresholds are the limits compare-shots.mjs enforces for this example; measured values show the margin.",
+  "versions": {
+    "three": "r185",
+    "browser": "Chromium 153.0.8010.12",
+    "godot": "4.7-stable (official)",
+    "rendering": "forward_plus/metal",
+    "platform": "darwin-arm64"
+  },
+  "lostFindings": [
+    "L02:degraded",
+    "L03:lost",
+    "L04:lost",
+    "L05:lost",
+    "L06:lost",
+    "L08:lost",
+    "L09:lost",
+    "L13:lost"
+  ],
+  "thresholds": {
+    "meanAbsDiff": 3,
+    "meanLDiff": 1,
+    "blockLMax": 12,
+    "blockLP95": 5,
+    "hueShareDiff": 0.01,
+    "probeLDiff": 1.5,
+    "shadeRatioDiff": 0.03,
+    "backgroundDiff": 1,
+    "darkPixelRatioMin": 0.6,
+    "darkPixelRatioMax": 1.4,
+    "cameraPosition": 0.001,
+    "cameraOrientationDeg": 0.05,
+    "cameraFov": 0.01
+  },
+  "measured": {
+    "overview": {
+      "cameraPosition": 0,
+      "cameraOrientationDeg": 0,
+      "cameraFov": 0,
+      "meanAbsDiff": 0.3109,
+      "meanLRef": 74.0753,
+      "meanLTest": 74.1333,
+      "meanLDiff": 0.058,
+      "blockLMax": 1.3172,
+      "blockLP95": 0.5209,
+      "hueShareDiff": 0.0027,
+      "probes": {
+        "lit-ground": {
+          "ref": 72.2911,
+          "test": 72.2911,
+          "diff": 0
+        },
+        "shade-ground": {
+          "ref": 72.2911,
+          "test": 72.2911,
+          "diff": 0
+        },
+        "sphere-lit": {
+          "ref": 72.2911,
+          "test": 72.2911,
+          "diff": 0
+        },
+        "cylinder-side": {
+          "ref": 59.7182,
+          "test": 59.7182,
+          "diff": 0
+        }
+      },
+      "backgroundDiff": 0,
+      "darkPixelRatio": 0.8481
+    },
+    "outline-closeup": {
+      "cameraPosition": 0,
+      "cameraOrientationDeg": 0,
+      "cameraFov": 0,
+      "meanAbsDiff": 1.3412,
+      "meanLRef": 69.2222,
+      "meanLTest": 68.9778,
+      "meanLDiff": 0.2444,
+      "blockLMax": 5.9833,
+      "blockLP95": 2.4245,
+      "hueShareDiff": 0.0012,
+      "darkPixelRatio": 0.8075
+    }
+  },
+  "referenceStability": {
+    "overview": 0,
+    "outline-closeup": 0
+  },
+  "controls": {
+    "linear-colors-as-srgb": {
+      "failedShots": 2,
+      "worstCheckVsLimit": 19.9194
+    },
+    "no-outline": {
+      "failedShots": 2,
+      "worstCheckVsLimit": 22.515
+    },
+    "no-pi": {
+      "failedShots": 2,
+      "worstCheckVsLimit": 57.286
+    }
+  }
+}

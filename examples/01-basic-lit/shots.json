@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "size": { "width": 640, "height": 360 },
+  "shots": [
+    {
+      "id": "front",
+      "purpose": "Hero view: all three objects, lit floor, shadows, flat background",
+      "camera": { "position": [0, 2.2, 7], "lookAt": [0, 0.6, 0], "fov": 40, "near": 0.1, "far": 100 },
+      "probes": [
+        { "name": "lit-floor", "x": 330, "y": 290 },
+        { "name": "shade-floor", "x": 285, "y": 212 },
+        { "name": "cube-front", "x": 200, "y": 180 },
+        { "name": "cylinder-side", "x": 455, "y": 180 }
+      ],
+      "flags": { "flatBackground": true, "shadeRatio": { "shade": "shade-floor", "lit": "lit-floor" } }
+    },
+    {
+      "id": "top",
+      "purpose": "Near top-down view: placement and size of the shapes, shadow footprint",
+      "camera": { "position": [0, 11, 2], "lookAt": [0, 0, 0], "fov": 40, "near": 0.1, "far": 100 },
+      "probes": [
+        { "name": "lit-floor", "x": 80, "y": 300 },
+        { "name": "shade-floor", "x": 295, "y": 140 },
+        { "name": "cube-top", "x": 240, "y": 170 },
+        { "name": "cylinder-top", "x": 410, "y": 190 }
+      ],
+      "flags": { "shadeRatio": { "shade": "shade-floor", "lit": "lit-floor" } }
+    },
+    {
+      "id": "low-oblique",
+      "purpose": "Low side view: cube and cylinder side faces, long shadows on the floor",
+      "camera": { "position": [5.5, 1.4, 5], "lookAt": [0, 0.7, 0], "fov": 40, "near": 0.1, "far": 100 },
+      "probes": [
+        { "name": "lit-floor", "x": 100, "y": 260 },
+        { "name": "shade-floor", "x": 500, "y": 250 },
+        { "name": "cube-lit-face", "x": 225, "y": 175 },
+        { "name": "cube-dark-face", "x": 280, "y": 175 },
+        { "name": "cylinder-lit", "x": 360, "y": 190 }
+      ],
+      "flags": { "flatBackground": true, "shadeRatio": { "shade": "shade-floor", "lit": "lit-floor" } }
+    }
+  ]
+}
