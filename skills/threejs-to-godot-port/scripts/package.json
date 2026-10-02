@@ -1,6 +1,6 @@
 {
   "name": "threejs-to-godot-port-scripts",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Helper scripts for the threejs-to-godot-port agent skill",
   "license": "MIT",

@@ -51,7 +51,7 @@ npx skills add namayasai/threejs-to-godot-skill
 
 Or copy `skills/threejs-to-godot-port/` into your agent's skills folder.
 
-**What an install of the skill folder contains.** The skill is the folder `skills/threejs-to-godot-port/`: `SKILL.md`, `references/` and `scripts/` (every tool, test and Godot script the workflow needs). `npx skills add` and a manual copy take only that folder. `examples/` and `docs/case-study/` are at the repository root, next to `skills/`, and are left behind. `SKILL.md` names them in places; take them from this repository when you want to run the examples or read the case study.
+**What an install of the skill folder contains.** The skill is the folder `skills/threejs-to-godot-port/`: `SKILL.md`, `LICENSE`, `references/` and `scripts/` (every tool, test and Godot script the workflow needs). `npx skills add` and a manual copy take only that folder. `examples/` and `docs/case-study/` are at the repository root, next to `skills/`, and are left behind. `SKILL.md` names them in places; take them from this repository when you want to run the examples or read the case study.
 
 Status of these commands: the skill folder and the marketplace file pass `claude plugin validate`. Installing from GitHub was not tried before publication, so the commands above are untested.
 
@@ -60,13 +60,15 @@ Status of these commands: the skill folder and the marketplace file pass `claude
 - Node.js 22 (tested with 22.14.0), then `cd skills/threejs-to-godot-port/scripts && npm ci && npx playwright install chromium`
 - Godot 4.7 (tested with 4.7.stable.official.5b4e0cb0f); set the environment variable `GODOT` to the executable
 - A display for Godot captures (headless Godot does not draw). Tests run headless.
-- Tested on macOS (Apple Silicon) only. Windows and Linux are untested.
+- Full rendering parity was measured on macOS (Apple Silicon). Node regressions and headless Godot unit tests also run on Linux; Linux/Windows end-to-end rendering parity is not verified.
 
 Then check the setup:
 
 ```
 node skills/threejs-to-godot-port/scripts/doctor.mjs
 ```
+
+If Chromium is already installed, `TG_CHROMIUM_EXECUTABLE=/path/to/chromium` explicitly selects that executable instead of Playwright's downloaded browser. Its actual version is recorded; parity thresholds still need calibration.
 
 ## Run the examples
 
@@ -84,6 +86,12 @@ cd skills/threejs-to-godot-port/scripts
 npm test                              # unit tests and Chromium tests
 GODOT=/path/to/Godot ./test-godot.sh  # Godot-side unit tests, headless
 ```
+
+## Capture validation
+
+Fresh captures write a `captureDefinition` sidecar containing the requested dimensions and the full ordered camera/step timeline. Comparison requires both valid sidecars by default and rejects missing metadata, stale definitions and incorrect image dimensions. Re-capture images created by older versions of the tools. `--image-only` explicitly compares legacy/external PNGs without camera or provenance validation; the report marks that mode.
+
+A shot's `fov` is its effective vertical field of view. Fixed captures reset source-camera zoom and cropping; use `camera.getEffectiveFOV()` when deriving the shot sheet. `--only` limits saved images but still advances the complete shot timeline, so the same shot has the same requested state when captured alone or as part of the sheet.
 
 ## What was measured, and what was not
 
@@ -105,7 +113,7 @@ Where a tool can detect one of these, it warns or stops with a message. None of 
 - **A JavaScript physics engine in the original (for example cannon-es)**: no tool records its behavior, and module mode cannot import it. See `references/physics.md`, section 6.
 - **Other bare imports in module mode**: only `three` and `three/addons/...` resolve. Use relative imports or page mode.
 - **three.js before r155**: not tested. Its light units differ, so the divide-by-PI rule may not hold.
-- **Operating systems other than macOS**: not tested.
+- **End-to-end captures on operating systems other than macOS**: not measured; Linux headless/unit regressions do not establish rendering parity.
 - **Not measured**: point and spot light attenuation, tone mapping other than none, exposure, the glTF material extensions, frame rate.
 
 ## Third-party software

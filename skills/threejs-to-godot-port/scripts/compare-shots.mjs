@@ -2,7 +2,7 @@
 // (d) Compare paired screenshots (before: three.js, after: Godot) and count the differences.
 //
 // Usage:
-//   node compare-shots.mjs --ref <dir> --test <dir> --shots <shots.json> --out <dir> [--thresholds <file.json>] [--diff]
+//   node compare-shots.mjs --ref <dir> --test <dir> --shots <shots.json> --out <dir> [--thresholds <file.json>] [--diff] [--image-only]
 //
 // <dir> holds <id>.png and <id>.json for every shot id (capture-three.mjs and capture_godot.gd write that layout).
 // Outputs in <out>: compare/<id>.png (ref on top, test below, magenta line between), diff/<id>.png (with --diff),
@@ -10,8 +10,10 @@
 // Exit codes: 0 every shot passes, 3 at least one check fails, 1 the tool failed (missing file, bad input).
 import fs from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { PNG } from 'pngjs';
-import { loadShots, ShotsError } from './lib/shots.mjs';
+import { Matrix4, Quaternion, Vector3 } from 'three';
+import { captureDefinition, loadShots, ShotsError, validateShots } from './lib/shots.mjs';
 import * as M from './lib/png-metrics.mjs';
 
 // Initial proposals, not derived statistically. Calibrate them on your own scene (see references/ and examples/).
@@ -29,10 +31,13 @@ export const DEFAULT_THRESHOLDS = {
   cameraPosition: 1e-3,
   cameraOrientationDeg: 0.05,
   cameraFov: 0.01,
+  cameraClipRelative: 1e-5,
 };
 
 const USAGE = `Usage:
-  node compare-shots.mjs --ref <dir> --test <dir> --shots <shots.json> --out <dir> [--thresholds <file.json>] [--diff]
+  node compare-shots.mjs --ref <dir> --test <dir> --shots <shots.json> --out <dir> [--thresholds <file.json>] [--diff] [--image-only]
+By default, both camera sidecars and capture definitions are required. --image-only
+explicitly skips camera/provenance checks; expected image dimensions are still checked.
 Exit codes: 0 all pass, 3 at least one check fails, 1 the tool failed.`;
 
 class CompareError extends Error {}
@@ -52,12 +57,54 @@ function readPng(file) {
   }
 }
 
-function readJson(file) {
+function readJson(file, label = path.basename(file)) {
+  let text;
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch {
-    return null;
+    text = fs.readFileSync(file, 'utf8');
+  } catch (error) {
+    throw new CompareError(`cannot read ${label} (${error.code ?? 'read error'})`);
   }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new CompareError(`${label} is not valid JSON`);
+  }
+}
+
+const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const isVec = (value, n) => Array.isArray(value) && value.length === n && value.every(v => typeof v === 'number' && Number.isFinite(v));
+
+function validateThresholds(thresholds, label) {
+  if (!isObject(thresholds)) throw new CompareError(`${label} must be an object`);
+  for (const [key, value] of Object.entries(thresholds)) {
+    if (!Object.hasOwn(DEFAULT_THRESHOLDS, key)) throw new CompareError(`unknown threshold: ${key}`);
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) throw new CompareError(`${label}.${key} must be a finite non-negative number`);
+  }
+  if (thresholds.darkPixelRatioMin > thresholds.darkPixelRatioMax) throw new CompareError(`${label}: darkPixelRatioMin must not exceed darkPixelRatioMax`);
+}
+
+function validateMeta(meta, shot, image, label) {
+  const fail = message => { throw new CompareError(`${shot.id}: ${label} sidecar ${message}`); };
+  if (!isObject(meta)) fail('must be an object (recapture, or explicitly use --image-only)');
+  if (meta.id !== shot.id) fail(`id must be ${shot.id}`);
+  if (!isObject(meta.size) || !Number.isSafeInteger(meta.size.width) || !Number.isSafeInteger(meta.size.height) || meta.size.width < 8 || meta.size.height < 8) fail('size must contain integer width and height >= 8');
+  if (meta.size.width !== image.width || meta.size.height !== image.height) fail('size does not match its PNG');
+  const cam = meta.camera;
+  if (!isObject(cam)) fail('camera is required');
+  if (cam.type !== 'perspective') fail('camera.type must be perspective');
+  if (!isVec(cam.position, 3)) fail('camera.position must contain three finite numbers');
+  if (!isVec(cam.quaternion, 4) || Math.abs(Math.hypot(...cam.quaternion) - 1) > 1e-3) fail('camera.quaternion must contain four finite numbers forming a unit quaternion');
+  if (typeof cam.fov !== 'number' || !Number.isFinite(cam.fov) || cam.fov <= 0 || cam.fov >= 180) fail('camera.fov must be finite and between 0 and 180 degrees');
+  if (typeof cam.near !== 'number' || !Number.isFinite(cam.near) || cam.near <= 0) fail('camera.near must be a finite positive number');
+  if (typeof cam.far !== 'number' || !Number.isFinite(cam.far) || cam.far <= cam.near) fail('camera.far must be finite and greater than camera.near');
+  if (!isObject(meta.captureDefinition)) fail('captureDefinition is required (recapture, or explicitly use --image-only)');
+  try { validateShots(meta.captureDefinition); } catch (error) { fail(`captureDefinition is invalid: ${error.message}`); }
+}
+
+function requestedQuaternion(camera) {
+  if (camera.quaternion) return new Quaternion(...camera.quaternion).normalize().toArray();
+  const matrix = new Matrix4().lookAt(new Vector3(...camera.position), new Vector3(...camera.lookAt), new Vector3(...(camera.up ?? [0, 1, 0])));
+  return new Quaternion().setFromRotationMatrix(matrix).normalize().toArray();
 }
 
 function writePng(file, width, height, data) {
@@ -86,36 +133,58 @@ function stacked(a, b) {
   return { width, height, data };
 }
 
-export function compareShot({ shot, ref, test, refMeta, testMeta, thresholds }) {
-  const t = { ...thresholds, ...(shot.thresholds || {}) };
+export function compareShot({ sheet, shot, ref, test, refMeta, testMeta, thresholds = DEFAULT_THRESHOLDS, imageOnly = false }) {
+  if (!sheet) throw new CompareError('the current shot sheet is required to check dimensions and capture provenance');
+  validateThresholds(thresholds, 'thresholds');
+  if (shot.thresholds !== undefined) validateThresholds(shot.thresholds, `${shot.id}.thresholds`);
+  const t = { ...DEFAULT_THRESHOLDS, ...thresholds, ...(shot.thresholds || {}) };
+  validateThresholds(t, `${shot.id}.thresholds`);
   const checks = [];
   const metrics = {};
   // factor: how far past its limit a check is (1 = exactly at the limit). Used to judge negative controls.
   const check = (name, value, limit, pass, extra = {}) => {
     let factor = null;
-    if (typeof limit === 'number' && limit > 0 && typeof value === 'number') factor = value / limit;
+    if (typeof limit === 'number' && limit >= 0 && typeof value === 'number') factor = limit === 0 ? (value === 0 ? 0 : Number.MAX_VALUE) : value / limit;
     if (typeof limit === 'string' && limit.includes('..')) {
       const [lo, hi] = limit.split('..').map(Number);
       factor = value < lo ? lo / Math.max(value, 1e-9) : value > hi ? value / hi : value / hi;
     }
-    checks.push({ name, value, limit, pass, factor, ...extra });
+    checks.push({ name, value, limit, pass, factor, category: 'visual', ...extra });
   };
   const sameSize = ref.width === test.width && ref.height === test.height;
-  check('imageSize', sameSize ? 1 : 0, 1, sameSize, { detail: `${ref.width}x${ref.height} vs ${test.width}x${test.height}` });
-  if (!sameSize) return { id: shot.id, pass: false, metrics, checks };
+  check('imageSize', sameSize ? 1 : 0, 1, sameSize, { category: 'capture', factor: null, detail: `${ref.width}x${ref.height} vs ${test.width}x${test.height}` });
+  const expectedSize = [ref, test].every(img => img.width === sheet.size.width && img.height === sheet.size.height);
+  check('expectedImageSize', expectedSize ? 1 : 0, 1, expectedSize, { category: 'capture', factor: null, detail: `expected ${sheet.size.width}x${sheet.size.height}` });
 
-  if (refMeta && testMeta && refMeta.camera && testMeta.camera) {
+  if (!imageOnly) {
+    validateMeta(refMeta, shot, ref, 'reference');
+    validateMeta(testMeta, shot, test, 'test');
+    const expectedDefinition = captureDefinition(sheet);
+    for (const [label, meta] of [['reference', refMeta], ['test', testMeta]]) {
+      const current = isDeepStrictEqual(meta.captureDefinition, expectedDefinition);
+      check(`captureDefinition:${label}`, current ? 1 : 0, 1, current, { category: 'capture', factor: null, detail: current ? 'matches current shot sheet' : 'stale capture: recapture using the current shot sheet' });
+      const position = Math.hypot(...shot.camera.position.map((v, i) => v - meta.camera.position[i]));
+      const orientation = M.orientationDiffDegrees(requestedQuaternion(shot.camera), meta.camera.quaternion);
+      check(`requestedCameraPosition:${label}`, position, t.cameraPosition, position <= t.cameraPosition, { category: 'camera' });
+      check(`requestedCameraOrientationDeg:${label}`, orientation, t.cameraOrientationDeg, orientation <= t.cameraOrientationDeg, { category: 'camera' });
+      const fov = Math.abs(shot.camera.fov - meta.camera.fov);
+      check(`requestedCameraFov:${label}`, fov, t.cameraFov, fov <= t.cameraFov, { category: 'camera' });
+      for (const clip of ['near', 'far']) {
+        const delta = Math.abs(shot.camera[clip] - meta.camera[clip]);
+        const limit = Math.max(1, Math.abs(shot.camera[clip])) * t.cameraClipRelative;
+        check(`requestedCamera${clip === 'near' ? 'Near' : 'Far'}:${label}`, delta, limit, delta <= limit, { category: 'camera' });
+      }
+    }
     const dp = Math.hypot(...refMeta.camera.position.map((v, i) => v - testMeta.camera.position[i]));
     const dq = M.orientationDiffDegrees(refMeta.camera.quaternion, testMeta.camera.quaternion);
     metrics.cameraPosition = dp; metrics.cameraOrientationDeg = dq;
-    check('cameraPosition', dp, t.cameraPosition, dp <= t.cameraPosition);
-    check('cameraOrientationDeg', dq, t.cameraOrientationDeg, dq <= t.cameraOrientationDeg);
-    if (typeof refMeta.camera.fov === 'number' && typeof testMeta.camera.fov === 'number') {
-      const df = Math.abs(refMeta.camera.fov - testMeta.camera.fov);
-      metrics.cameraFov = df;
-      check('cameraFov', df, t.cameraFov, df <= t.cameraFov);
-    }
+    check('cameraPosition', dp, t.cameraPosition, dp <= t.cameraPosition, { category: 'camera' });
+    check('cameraOrientationDeg', dq, t.cameraOrientationDeg, dq <= t.cameraOrientationDeg, { category: 'camera' });
+    const df = Math.abs(refMeta.camera.fov - testMeta.camera.fov);
+    metrics.cameraFov = df;
+    check('cameraFov', df, t.cameraFov, df <= t.cameraFov, { category: 'camera' });
   }
+  if (!sameSize || !expectedSize) return { id: shot.id, pass: false, metrics, checks };
 
   const lr = M.labPlanes(ref), lt = M.labPlanes(test);
   metrics.meanAbsDiff = M.meanAbsDiff(ref, test);
@@ -178,7 +247,7 @@ function fmt(v) {
 }
 
 export function reportMarkdown(report) {
-  const lines = ['# Shot comparison', '', `Shots: ${report.shots.length}, passed: ${report.summary.passed}, failed: ${report.summary.failed}`, ''];
+  const lines = ['# Shot comparison', '', `Mode: ${report.mode ?? 'strict'}${report.mode === 'image-only' ? ' (camera and capture provenance not checked)' : ''}`, '', `Shots: ${report.shots.length}, passed: ${report.summary.passed}, failed: ${report.summary.failed}`, ''];
   for (const shot of report.shots) {
     lines.push(`## ${shot.id}: ${shot.pass ? 'PASS' : 'FAIL'}`, '', '| check | value | limit | result |', '| --- | --- | --- | --- |');
     for (const c of shot.checks) lines.push(`| ${c.name} | ${fmt(c.value)} | ${fmt(c.limit)} | ${c.pass ? 'ok' : 'FAIL'} |`);
@@ -192,6 +261,7 @@ function parse(argv) {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--diff') { out.diff = true; continue; }
+    if (arg === '--image-only') { out.imageOnly = true; continue; }
     if (arg === '--help') { out.help = true; continue; }
     if (!['--ref', '--test', '--shots', '--out', '--thresholds'].includes(arg)) throw new CompareError(`unknown option: ${arg}`);
     const value = argv[++i];
@@ -209,8 +279,7 @@ async function main() {
   let thresholds = { ...DEFAULT_THRESHOLDS };
   if (args.thresholds) {
     const extra = readJson(args.thresholds);
-    if (!extra || typeof extra !== 'object') throw new CompareError('cannot read the thresholds file');
-    for (const key of Object.keys(extra)) if (!(key in DEFAULT_THRESHOLDS)) throw new CompareError(`unknown threshold: ${key}`);
+    validateThresholds(extra, 'thresholds');
     thresholds = { ...thresholds, ...extra };
   }
   const outDir = path.resolve(args.out);
@@ -218,9 +287,9 @@ async function main() {
   for (const shot of sheet.shots) {
     const ref = readPng(path.join(args.ref, `${shot.id}.png`));
     const test = readPng(path.join(args.test, `${shot.id}.png`));
-    const refMeta = readJson(path.join(args.ref, `${shot.id}.json`));
-    const testMeta = readJson(path.join(args.test, `${shot.id}.json`));
-    const result = compareShot({ shot, ref, test, refMeta, testMeta, thresholds });
+    const refMeta = args.imageOnly ? null : readJson(path.join(args.ref, `${shot.id}.json`), `${shot.id}: reference sidecar`);
+    const testMeta = args.imageOnly ? null : readJson(path.join(args.test, `${shot.id}.json`), `${shot.id}: test sidecar`);
+    const result = compareShot({ sheet, shot, ref, test, refMeta, testMeta, thresholds, imageOnly: !!args.imageOnly });
     shots.push(result);
     const pair = stacked(ref, test);
     writePng(path.join(outDir, 'compare', `${shot.id}.png`), pair.width, pair.height, pair.data);
@@ -234,8 +303,11 @@ async function main() {
     }
   }
   const failed = shots.filter(s => !s.pass).length;
-  const failFactors = shots.flatMap(s => s.checks.filter(c => !c.pass && c.factor !== null).map(c => c.factor));
-  const report = { schema: 1, thresholds, shots, summary: { passed: shots.length - failed, failed, maxFailFactor: failFactors.length ? Math.max(...failFactors) : null } };
+  const maxFailFactor = category => {
+    const factors = shots.flatMap(s => s.checks.filter(c => !c.pass && c.factor !== null && (!category || c.category === category)).map(c => c.factor));
+    return factors.length ? Math.max(...factors) : null;
+  };
+  const report = { schema: 1, mode: args.imageOnly ? 'image-only' : 'strict', thresholds, shots, summary: { passed: shots.length - failed, failed, maxFailFactor: maxFailFactor(), maxVisualFailFactor: maxFailFactor('visual'), maxCameraFailFactor: maxFailFactor('camera') } };
   fs.mkdirSync(outDir, { recursive: true });
   fs.writeFileSync(path.join(outDir, 'report.json'), JSON.stringify(report, null, 2) + '\n');
   fs.writeFileSync(path.join(outDir, 'report.md'), reportMarkdown(report) + '\n');

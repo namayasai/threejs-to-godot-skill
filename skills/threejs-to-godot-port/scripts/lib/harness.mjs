@@ -72,7 +72,8 @@ export async function launchBrowser() {
     throw new HarnessError('playwright is not installed. Run `npm ci` in the scripts folder, then `npx playwright install chromium`.');
   }
   try {
-    return await chromium.launch({ headless: true });
+    return await chromium.launch({ headless: true,
+      ...(process.env.TG_CHROMIUM_EXECUTABLE ? { executablePath: process.env.TG_CHROMIUM_EXECUTABLE } : {}) });
   } catch (error) {
     throw new HarnessError(`Chromium could not start (${String(error.message).split('\n')[0]}). Run \`npx playwright install chromium\`.`);
   }
@@ -84,14 +85,21 @@ export async function openScene({ module: modulePath, page: pageUrl, width = 640
   if ((modulePath ? 1 : 0) + (pageUrl ? 1 : 0) !== 1) throw new HarnessError('give exactly one of --module and --page');
   const moduleAbs = modulePath ? path.resolve(modulePath) : null;
   if (moduleAbs && !fs.existsSync(moduleAbs)) throw new HarnessError('the --module file does not exist');
-  const server = await startServer({ userRoot: moduleAbs ? path.dirname(moduleAbs) : undefined });
-  const browser = await launchBrowser();
-  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
-  const page = await context.newPage();
+  let server = null;
+  let browser = null;
+  // Acquiring a browser can fail (for example before Chromium is installed). Close
+  // everything already acquired so the HTTP listener cannot keep the CLI alive.
+  const close = async () => {
+    try { if (browser) await browser.close(); }
+    finally { if (server) await server.close(); }
+  };
   const problems = [];
-  page.on('pageerror', error => problems.push(`pageerror: ${error.message}`));
-  const close = async () => { await browser.close(); await server.close(); };
   try {
+    server = await startServer({ userRoot: moduleAbs ? path.dirname(moduleAbs) : undefined });
+    browser = await launchBrowser();
+    const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+    const page = await context.newPage();
+    page.on('pageerror', error => problems.push(`pageerror: ${error.message}`));
     let pageRevision = null;
     if (moduleAbs) {
       await page.goto(`${server.origin}/__harness.html`);
