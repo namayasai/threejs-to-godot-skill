@@ -138,6 +138,7 @@ export function collectSettings() {
     out.camera = {
       type: camera.type, fov: camera.fov === undefined ? null : camera.fov, aspect: camera.aspect === undefined ? null : camera.aspect,
       near: camera.near, far: camera.far, zoom: camera.zoom,
+      effectiveFOV: camera.isPerspectiveCamera ? camera.getEffectiveFOV() : null,
       position: w.position, quaternion: w.quaternion,
     };
     if (camera.isOrthographicCamera) {
@@ -157,7 +158,8 @@ export function collectSettings() {
   else if (fog) warnings.push('Fog: three.js blends with smoothstep(near, far, depth); Godot depth fog uses fog_depth_curve. The brightness match was not measured.');
   out.environment = { hasEnvironmentMap: !!scene.environment, intensity: scene.environmentIntensity === undefined ? null : scene.environmentIntensity };
   out.lights = [];
-  scene.traverse(object => {
+  // Match the visible snapshot exported to glTF, including hidden ancestors.
+  scene.traverseVisible(object => {
     if (!object.isLight) return;
     const w = world(object);
     const entry = {

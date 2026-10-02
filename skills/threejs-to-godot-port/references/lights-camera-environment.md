@@ -40,6 +40,8 @@ Point and spot lights use candela in three.js (inverse-square falloff) and a dif
 | `RectAreaLight`, `LightProbe` | not exported (L06) [source] | none | No direct counterpart [unverified] |
 | `light.castShadow`, `mesh.castShadow`, `mesh.receiveShadow` | not written (L08) [source] | Meshes cast shadows by default and imported lights do not [measured]; Godot has no per-mesh receive flag [unverified] | `shadow_enabled` on lights; `cast_shadow` per mesh from `settings.json` `objects[]` |
 
+Settings collect only effectively visible lights, including ancestor visibility. Global `renderer.shadowMap.enabled` and each light's `castShadow` jointly control the rebuilt shadows. Ambient contributions remain independent of hemisphere mode; unsupported axis approximations are recorded in notes.
+
 Light colors: pass the sRGB hex to `light_color`. The example matches to about 0.05 L* [measured].
 
 ## 3. Hemisphere light
@@ -52,8 +54,8 @@ three.js blends a sky color and a ground color by the surface normal's up compon
 | `hemisphere: sky` (procedural sky, `sky_energy_multiplier` = intensity / PI) | 50.8 / 38.6 | 48.9 / 37.4 | 28.4 / 27.6 | 39.4 / 32.3 |
 | `hemisphere: sky` with `hemisphere_scale` 1.3 | 50.8 / 49.9 | 48.9 / 47.9 | 28.4 / 30.8 | 39.4 / 39.3 |
 
-- `flat` loses all orientation dependence.
-- `sky` keeps it. With a sky ambient source, `Environment.ambient_light_energy` had no effect in these runs; the sky's energy multiplier carries the intensity.
+- `flat` loses all orientation dependence. The corrected implementation averages sky/ground contributions in linear space and adds all ambient/hemisphere lights; the historical numbers above used the earlier sRGB averaging and were not remeasured for this correction.
+- `sky` keeps a world-Y approximation. The corrected implementation sums both sky and ground pole energy and ambient contributions; non-world-Y hemisphere axes are explicitly reported as an approximation. With a sky ambient source, `Environment.ambient_light_energy` had no effect in these runs; the sky's energy multiplier carries the intensity.
 - The scale that matched (1.3) is an empirical value for this scene. It is not a constant. Calibrate with `compare-shots.mjs`.
 - A custom shader that adds the hemisphere term itself (the route in `shaders/toon.gdshader`) matched in the case [case] and in example 02 [measured]. Set `hemisphere: none` so `apply_settings.gd` does not add it twice.
 
@@ -74,7 +76,7 @@ Self-shadow noise ("shadow acne") shows on curved surfaces near the terminator i
 
 | three.js | Godot | Evidence |
 | --- | --- | --- |
-| `PerspectiveCamera.fov` is the vertical field of view in degrees | `Camera3D.fov` is vertical when `keep_aspect = KEEP_HEIGHT` | [measured] position, orientation and fov match exactly in examples 01 and 02 |
+| `PerspectiveCamera.getEffectiveFOV()` is the vertical field of view after zoom (raw `fov` is sufficient only when zoom=1) | `Camera3D.fov` is vertical when `keep_aspect = KEEP_HEIGHT`; the builder applies effective FOV | [measured] position, orientation and fov match exactly in examples 01 and 02 |
 | `near`, `far`, `aspect` | `near`, `far`; aspect follows the viewport | [measured] |
 | Right-handed, y up, the camera looks down -z | The same. No axis conversion is needed between three.js world coordinates and Godot, nor for glTF | [measured] `camera.lookAt` and `Basis.looking_at` give the same quaternion |
 | Quaternion order (x, y, z, w) | `Quaternion(x, y, z, w)` | [measured] |

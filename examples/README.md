@@ -27,7 +27,7 @@ A window opens briefly for each Godot capture. Outputs go to `<example>/out/` (i
 4. The Godot tests run headless (`godot/tests/cases/`). They check what the importer does and what the port rebuilds.
 5. `capture_godot.gd` captures the Godot side from the same `shots.json`.
 6. `compare-shots.mjs` compares the two with the example's `thresholds.json`.
-7. With `--controls`: deliberately wrong Godot sides are captured and compared. Each must fail, and its worst check must be at least 2 times past its limit. If a control passes, the thresholds are too loose.
+7. With `--controls`: deliberately wrong Godot sides are captured and compared. Each must fail, and its worst visual check must be at least 2 times past its limit. A camera-metadata failure alone cannot certify image sensitivity. If a control passes, the thresholds are too loose.
 
 | Control | Mistake | Example |
 | --- | --- | --- |

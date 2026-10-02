@@ -10,16 +10,16 @@ extends RefCounted
 # Options (all optional):
 #   light_unit            "three" (default): Godot energy = three.js intensity / PI. "raw": energy = intensity.
 #   light_divisor         a number that overrides light_unit (energy = intensity / light_divisor). For sweeps and calibration.
-#   hemisphere            "flat" (default): HemisphereLight becomes a flat ambient color (sky and ground averaged).
-#                         "sky": a procedural sky supplies orientation-dependent ambient light.
-#                         "none": no ambient light from it (your own shader adds the hemisphere term; see shaders/toon.gdshader).
-#   hemisphere_scale      multiplies the hemisphere sky energy (calibration; default 1.0). Used with hemisphere = "sky".
+#   hemisphere            "flat" (default): all HemisphereLights add a linear sky/ground average to AmbientLight.
+#                         "sky": a procedural sky supplies a world-Y approximation; ambient light is added to both poles.
+#                         "none": leave hemisphere terms to your shader; AmbientLight still applies.
+#   hemisphere_scale      multiplies hemisphere contributions (calibration; default 1.0).
 #   shadow_max_distance   directional shadow range in meters (default 40).
 #   shadow_mode           "orthogonal", "2_splits" (default), "4_splits".
 #   shadow_bias, shadow_normal_bias   Godot values; unset keeps the Godot defaults.
 #   point_range           omni/spot range when the three.js light has distance 0 (default 100).
 #   fov_offset            degrees added to the camera fov (negative controls and experiments only).
-#   shadows               false switches every light's shadows off.
+#   shadows               false switches every light's shadows off. renderer.shadowMap.enabled=false always disables them.
 #
 # No class_name: preload this file by path. Works headless (nothing here needs a window).
 
@@ -34,6 +34,18 @@ const TONE_MAP := {
 
 static func _color(entry: Dictionary) -> Color:
 	return Color.html(str(entry["srgb"]))
+
+static func _linear_color(entry: Dictionary) -> Color:
+	# The unquantized linear dump is authoritative when combining radiance.
+	var rgb: Variant = entry.get("linear", null)
+	if rgb is Array and rgb.size() >= 3:
+		return Color(float(rgb[0]), float(rgb[1]), float(rgb[2]))
+	return _color(entry).srgb_to_linear()
+
+static func _ambient_color(radiance: Color, energy: float) -> Color:
+	if energy <= 0.0:
+		return Color.BLACK
+	return Color(radiance.r / energy, radiance.g / energy, radiance.b / energy).linear_to_srgb()
 
 static func _vec3(a: Array) -> Vector3:
 	return Vector3(float(a[0]), float(a[1]), float(a[2]))
@@ -97,13 +109,19 @@ static func apply(root: Node3D, settings: Dictionary, options: Dictionary = {}) 
 
 	# Lights
 	var ambient_sum := Color(0, 0, 0)
+	var ambient_energy := 0.0
 	var ambient_count := 0
-	var ambient_single: Dictionary = {}
-	var sky_light: Dictionary = {}
+	var hemisphere_lights: Array = []
+	var renderer_shadows := true
+	if renderer is Dictionary:
+		var shadow_map: Variant = renderer.get("shadowMap", null)
+		if shadow_map is Dictionary:
+			renderer_shadows = bool(shadow_map.get("enabled", true))
+	var shadows_enabled: bool = renderer_shadows and bool(options.get("shadows", true))
 	for entry in settings.get("lights", []):
 		var type := str(entry["type"])
 		var intensity := float(entry["intensity"])
-		var cast: bool = bool(entry.get("castShadow", false)) and bool(options.get("shadows", true))
+		var cast: bool = bool(entry.get("castShadow", false)) and shadows_enabled
 		var pos := _vec3(entry["position"])
 		match type:
 			"DirectionalLight":
@@ -142,50 +160,68 @@ static func apply(root: Node3D, settings: Dictionary, options: Dictionary = {}) 
 				lights.append(light3)
 				notes.append("%s: point and spot attenuation and units were not measured; check by eye and by compare-shots" % light3.name)
 			"AmbientLight":
-				ambient_sum += _color(entry["color"]).srgb_to_linear() * (intensity / divisor)
+				ambient_sum += _linear_color(entry["color"]) * (intensity / divisor)
+				ambient_energy += intensity / divisor
 				ambient_count += 1
-				ambient_single = entry
 			"HemisphereLight":
-				sky_light = entry
+				hemisphere_lights.append(entry)
 			_:
 				notes.append("light type '%s' is not carried" % type)
-	if ambient_count > 0 and sky_light.is_empty():
-		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-		if ambient_count == 1:
-			env.ambient_light_color = _color(ambient_single["color"])
-			env.ambient_light_energy = float(ambient_single["intensity"]) / divisor
-		else:
-			# Several ambient lights: sum in linear space, keep the brightest channel as the energy
-			var m := maxf(ambient_sum.r, maxf(ambient_sum.g, ambient_sum.b))
-			if m > 0.0:
-				env.ambient_light_color = Color(ambient_sum.r / m, ambient_sum.g / m, ambient_sum.b / m).linear_to_srgb()
-				env.ambient_light_energy = m
+	if ambient_count > 0:
 		notes.append("AmbientLight -> ambient color, energy = intensity / %s (%d lights)" % ["PI" if divisor != 1.0 else "1 (raw)", ambient_count])
-	if not sky_light.is_empty():
-		var sky_c := _color(sky_light["color"])
-		var ground_c := _color(sky_light["groundColor"])
-		var e := float(sky_light["intensity"]) / divisor * float(options.get("hemisphere_scale", 1.0))
-		var hemi_mode := str(options.get("hemisphere", "flat"))
+	var hemi_mode := str(options.get("hemisphere", "flat"))
+	if hemi_mode not in ["flat", "sky", "none"]:
+		notes.append("hemisphere mode '%s' is unsupported; flat is used" % hemi_mode)
+		hemi_mode = "flat"
+	var sky_sum := ambient_sum
+	var ground_sum := ambient_sum
+	var combined_energy := ambient_energy
+	for entry in hemisphere_lights:
+		var sky_c := _linear_color(entry["color"])
+		var ground_c := _linear_color(entry["groundColor"])
+		var energy := float(entry["intensity"]) / divisor * float(options.get("hemisphere_scale", 1.0))
 		if hemi_mode == "none":
-			notes.append("HemisphereLight: left to the shader (hemisphere = none)")
+			continue
+		combined_energy += energy
+		if hemi_mode == "flat":
+			ambient_sum += sky_c.lerp(ground_c, 0.5) * energy
 		elif hemi_mode == "sky":
-			var mat := ProceduralSkyMaterial.new()
-			mat.sky_top_color = sky_c
-			mat.sky_horizon_color = sky_c.lerp(ground_c, 0.5)
-			mat.ground_horizon_color = sky_c.lerp(ground_c, 0.5)
-			mat.ground_bottom_color = ground_c
-			mat.sky_energy_multiplier = e   # ambient_light_energy has no effect with a sky source (measured, 4.7); the sky multiplier carries the intensity
-			var sky := Sky.new()
-			sky.sky_material = mat
-			env.sky = sky
-			env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-			env.ambient_light_energy = 1.0
-			notes.append("HemisphereLight -> procedural sky ambient (orientation dependent), energy = intensity / PI")
+			# three.js derives the hemisphere axis from normalized world position,
+			# not the light quaternion. One procedural sky cannot represent every
+			# arbitrary-axis combination. Preserve both Y poles and report the loss.
+			var axis := _vec3(entry["position"]).normalized()
+			if absf(axis.x) > 1e-5 or absf(axis.z) > 1e-5:
+				notes.append("HemisphereLight '%s': sideways hemisphere axis is unsupported by the world-Y procedural sky; only its Y projection is carried" % str(entry.get("name", "")))
+			var sky_weight := 0.5 * axis.y + 0.5
+			sky_sum += ground_c.lerp(sky_c, sky_weight) * energy
+			ground_sum += ground_c.lerp(sky_c, 1.0 - sky_weight) * energy
+	if not hemisphere_lights.is_empty():
+		if hemi_mode == "none":
+			notes.append("HemisphereLight: %d lights left to the shader (hemisphere = none); AmbientLight is retained" % hemisphere_lights.size())
+		elif hemi_mode == "flat":
+			notes.append("HemisphereLight -> flat ambient color (%d lights summed in linear space with AmbientLight); orientation dependence is lost" % hemisphere_lights.size())
 		else:
-			env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-			env.ambient_light_color = sky_c.lerp(ground_c, 0.5)
-			env.ambient_light_energy = e
-			notes.append("HemisphereLight -> flat ambient color (sky/ground average); orientation dependence is lost")
+			notes.append("HemisphereLight -> procedural sky ambient (%d lights summed in linear space with AmbientLight); its angular response is an approximation, not the three.js hemisphere formula" % hemisphere_lights.size())
+	if hemi_mode == "sky" and not hemisphere_lights.is_empty():
+		var mat := ProceduralSkyMaterial.new()
+		mat.sky_top_color = _ambient_color(sky_sum, combined_energy)
+		mat.ground_bottom_color = _ambient_color(ground_sum, combined_energy)
+		var horizon_c := _ambient_color(sky_sum.lerp(ground_sum, 0.5), combined_energy)
+		mat.sky_horizon_color = horizon_c
+		mat.ground_horizon_color = horizon_c
+		# Both poles need the same radiance scale. ambient_light_energy has no
+		# effect with a sky source in the measured 4.7 setup.
+		mat.sky_energy_multiplier = combined_energy
+		mat.ground_energy_multiplier = combined_energy
+		var sky := Sky.new()
+		sky.sky_material = mat
+		env.sky = sky
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+		env.ambient_light_energy = 1.0
+	elif ambient_count > 0 or (hemi_mode == "flat" and not hemisphere_lights.is_empty()):
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = _ambient_color(ambient_sum, combined_energy)
+		env.ambient_light_energy = combined_energy
 	var we := WorldEnvironment.new()
 	we.name = "WorldEnvironment"
 	we.environment = env
@@ -200,7 +236,16 @@ static func apply(root: Node3D, settings: Dictionary, options: Dictionary = {}) 
 		if str(cam["type"]) == "PerspectiveCamera":
 			camera.projection = Camera3D.PROJECTION_PERSPECTIVE
 			camera.keep_aspect = Camera3D.KEEP_HEIGHT
-			camera.fov = float(cam["fov"]) + float(options.get("fov_offset", 0.0))
+			var effective_fov := float(cam["fov"])
+			if cam.get("effectiveFOV", null) != null:
+				effective_fov = float(cam["effectiveFOV"])
+			else:
+				var zoom := float(cam.get("zoom", 1.0))
+				if zoom > 0.0:
+					effective_fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(effective_fov) * 0.5) / zoom))
+				else:
+					notes.append("PerspectiveCamera zoom must be positive; the unzoomed fov is used")
+			camera.fov = effective_fov + float(options.get("fov_offset", 0.0))
 		else:
 			notes.append("camera type '%s' was not ported; a perspective camera is used" % str(cam["type"]))
 			camera.fov = 50.0

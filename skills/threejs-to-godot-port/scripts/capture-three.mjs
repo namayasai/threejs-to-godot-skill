@@ -9,8 +9,9 @@
 // Exit codes: 0 done, 1 failure.
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openScene, parseArgs, HarnessError } from './lib/harness.mjs';
-import { loadShots, ShotsError } from './lib/shots.mjs';
+import { loadShots, ShotsError, captureDefinition } from './lib/shots.mjs';
 
 const SPEC = { module: { type: 'string' }, page: { type: 'string' }, shots: { type: 'string', required: true }, out: { type: 'string', required: true }, only: { type: 'string' }, help: { type: 'boolean' } };
 const USAGE = `Usage:
@@ -19,16 +20,32 @@ const USAGE = `Usage:
 Exit codes: 0 done, 1 failure.`;
 
 // Runs in the page: put the camera where the shot says, step, render once.
-async function frame({ shot, width, height }) {
+export async function frame({ shot, width, height }) {
   const { THREE, scene, camera, renderer, step } = window.__tg;
   if (!camera || !renderer) throw new Error('the scene needs a camera and a renderer to be captured');
   if (!camera.isPerspectiveCamera) throw new Error('only a PerspectiveCamera can be captured and compared: the Godot side is perspective and shots.json needs a fov');
   const cam = shot.camera;
-  camera.position.set(...cam.position);
+  scene.updateMatrixWorld(true);
+  const position = new THREE.Vector3(...cam.position);
+  camera.position.copy(camera.parent ? camera.parent.worldToLocal(position) : position);
   const up = cam.up || [0, 1, 0];
   camera.up.set(...up);
   if (cam.lookAt) camera.lookAt(new THREE.Vector3(...cam.lookAt));
-  else camera.quaternion.set(...cam.quaternion).normalize();
+  else {
+    const rotation = new THREE.Quaternion(...cam.quaternion).normalize();
+    if (camera.parent) {
+      const parentRotation = camera.parent.getWorldQuaternion(new THREE.Quaternion());
+      rotation.premultiply(parentRotation.invert());
+    }
+    camera.quaternion.copy(rotation);
+  }
+  // A shot specifies its effective projection, independent of source camera zoom
+  // and multi-view cropping. Use getEffectiveFOV() when deriving shots from a camera.
+  camera.zoom = 1;
+  camera.filmOffset = 0;
+  camera.clearViewOffset();
+  renderer.setPixelRatio(1);
+  renderer.setSize(width, height, true);
   if (camera.isPerspectiveCamera) { camera.fov = cam.fov; camera.aspect = width / height; }
   camera.near = cam.near;
   camera.far = cam.far;
@@ -50,6 +67,7 @@ async function main() {
   const args = parseArgs(argv, SPEC);
   const sheet = loadShots(args.shots);
   const only = args.only ? new Set(args.only.split(',')) : null;
+  if (only) for (const id of only) if (!sheet.shots.some(s => s.id === id)) throw new ShotsError(`unknown --only shot: ${id}`);
   const { width, height } = sheet.size;
   const opened = await openScene({ module: args.module, page: args.page, width, height });
   try {
@@ -58,12 +76,19 @@ async function main() {
     const browserVersion = opened.page.context().browser().version();
     let count = 0;
     for (const shot of sheet.shots) {
-      if (only && !only.has(shot.id)) continue;
+      // Preserve the whole ordered state timeline, even when only some images are requested.
       const camera = await opened.page.evaluate(frame, { shot, width, height });
-      const target = opened.mode === 'module' ? opened.page.locator('#c') : opened.page;
+      if (only && !only.has(shot.id)) continue;
+      if (opened.mode === 'page') await opened.page.evaluate(() => {
+        const canvas = window.__tg.renderer.domElement;
+        if (!(canvas instanceof HTMLCanvasElement)) throw new Error('page capture needs an HTMLCanvasElement renderer.domElement');
+        canvas.setAttribute('data-tg-capture', 'true');
+      });
+      const target = opened.mode === 'module' ? opened.page.locator('#c') : opened.page.locator('canvas[data-tg-capture="true"]');
       await target.screenshot({ path: path.join(outDir, `${shot.id}.png`), animations: 'disabled' });
       const meta = { id: shot.id, renderer: 'three.js', threeRevision: camera.revision, browser: `Chromium ${browserVersion}`, size: { width, height },
-        camera: { position: camera.position, quaternion: camera.quaternion, fov: camera.fov, near: camera.near, far: camera.far } };
+        camera: { type: 'perspective', position: camera.position, quaternion: camera.quaternion, fov: camera.fov, near: camera.near, far: camera.far },
+        captureDefinition: captureDefinition(sheet) };
       fs.writeFileSync(path.join(outDir, `${shot.id}.json`), JSON.stringify(meta, null, 2) + '\n');
       count++;
     }
@@ -74,7 +99,7 @@ async function main() {
   }
 }
 
-main().then(code => { process.exitCode = code; }).catch(error => {
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main().then(code => { process.exitCode = code; }).catch(error => {
   console.error(error instanceof HarnessError || error instanceof ShotsError ? `error: ${error.message}` : error);
   process.exitCode = 1;
 });

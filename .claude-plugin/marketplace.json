@@ -10,7 +10,7 @@
     {
       "name": "threejs-to-godot-port",
       "description": "Staged workflow, checks and tools for porting a three.js scene or game to Godot 4 (GDScript): freeze the reference, carry the shapes, rebuild materials, lights and environment, compare numerically, re-verify physics.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "license": "MIT",
       "source": "./",
       "strict": false,

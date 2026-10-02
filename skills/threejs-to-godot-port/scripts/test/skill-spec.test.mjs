@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const scripts = path.join(here, '..');
@@ -37,11 +38,14 @@ test('SKILL.md has fewer than 500 lines', () => {
   assert.ok(text.split('\n').length < 500);
 });
 
-test('every path named in SKILL.md exists', () => {
+test('every bundled path named in SKILL.md exists', () => {
   const repo = path.join(skillDir, '..', '..');
   const named = new Set([...body.matchAll(/`((?:scripts|references|examples)\/[A-Za-z0-9_./-]+?)`/g)].map(m => m[1]));
   assert.ok(named.size > 10);
   for (const p of named) {
+    // Folder-only installation deliberately excludes the repository examples.
+    // Check those when the repository is present; always check bundled resources.
+    if (p.startsWith('examples/') && !fs.existsSync(path.join(repo, 'examples'))) continue;
     const candidates = [path.join(skillDir, p), path.join(repo, p)];
     assert.ok(candidates.some(c => fs.existsSync(c)), `${p} does not exist`);
   }
@@ -67,4 +71,21 @@ test('loss rule ids mentioned in SKILL.md and the references exist in loss-rules
   const source = fs.readFileSync(path.join(scripts, 'lib', 'loss-rules.mjs'), 'utf8');
   const docs = [body, fs.readFileSync(path.join(skillDir, 'references', 'materials.md'), 'utf8'), fs.readFileSync(path.join(skillDir, 'references', 'lights-camera-environment.md'), 'utf8'), fs.readFileSync(path.join(skillDir, 'references', 'pitfalls.md'), 'utf8')].join('\n');
   for (const id of new Set(docs.match(/\bL\d\d\b/g))) assert.ok(source.includes(`'${id}'`), `${id} is not a rule in loss-rules.mjs`);
+});
+
+// Reproduce the supported manual-copy layout, rather than testing only a checkout.
+test('folder-only installation passes its skill checks', { skip: process.env.TG_FOLDER_ONLY_CHECK === '1' }, () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-installed-skill-'));
+  try {
+    const installed = path.join(dir, 'threejs-to-godot-port');
+    fs.cpSync(skillDir, installed, { recursive: true,
+      filter: source => !source.split(path.sep).includes('node_modules') });
+    const dependencies = path.join(scripts, 'node_modules');
+    if (fs.existsSync(dependencies)) fs.symlinkSync(dependencies, path.join(installed, 'scripts', 'node_modules'), 'dir');
+    assert.ok(fs.existsSync(path.join(installed, 'LICENSE')), 'the installed folder retains the MIT notice');
+    const result = spawnSync(process.execPath, ['--test', path.join(installed, 'scripts', 'test', 'skill-spec.test.mjs')], {
+      encoding: 'utf8', timeout: 30000, env: { ...process.env, TG_FOLDER_ONLY_CHECK: '1' },
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

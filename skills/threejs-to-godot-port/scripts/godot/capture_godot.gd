@@ -11,7 +11,8 @@ extends Node
 # --probe draws a 64 x 64 test image and checks its center pixel (used by doctor.mjs).
 #
 # A shot's at.step is the number of physics ticks to wait before that shot, counted from the scene's current state (the scene is
-# not reloaded between shots, so steps add up in sheet order). The two draw frames before the image is read add one or two more
+# not reloaded between shots, so steps add up in sheet order). --only limits output but still advances every shot.
+# The two draw frames before the image is read add one or two more
 # ticks with --fixed-fps 120.
 #
 # A hook script may define:  static func after_build(built: Dictionary, settings: Dictionary, options: Dictionary) -> void
@@ -100,14 +101,29 @@ func _run() -> void:
 		for id in str(args["only"]).split(","):
 			only[id] = true
 	var failures := 0
+	for id in only:
+		var found := false
+		for shot in sheet["shots"]:
+			if str(shot["id"]) == str(id):
+				found = true
+		if not found:
+			_fail("unknown --only shot: %s" % str(id))
+			return
+	options["capture_definition"] = _capture_definition(sheet)
 	for shot in sheet["shots"]:
-		if not only.is_empty() and not only.has(str(shot["id"])):
-			continue
-		if not await _capture(vp, camera, shot, size, out_dir, built, options):
+		var selected := only.is_empty() or only.has(str(shot["id"]))
+		if not await _capture(vp, camera, shot, size, out_dir, built, options, selected):
 			failures += 1
 	get_tree().quit(1 if failures > 0 else 0)
 
-func _capture(vp: SubViewport, camera: Camera3D, shot: Dictionary, size: Vector2i, out_dir: String, built: Dictionary, options: Dictionary) -> bool:
+func _capture_definition(sheet: Dictionary) -> Dictionary:
+	var timeline: Array = []
+	for shot in sheet["shots"]:
+		var at: Dictionary = shot.get("at", {})
+		timeline.append({"id": shot["id"], "camera": shot["camera"], "at": {"step": int(at.get("step", 0))}})
+	return {"schema": 1, "size": sheet["size"], "shots": timeline}
+
+func _capture(vp: SubViewport, camera: Camera3D, shot: Dictionary, size: Vector2i, out_dir: String, built: Dictionary, options: Dictionary, write_capture: bool = true) -> bool:
 	var cam: Dictionary = shot["camera"]
 	var pos := Vector3(cam["position"][0], cam["position"][1], cam["position"][2])
 	var up := Vector3(0, 1, 0)
@@ -130,12 +146,17 @@ func _capture(vp: SubViewport, camera: Camera3D, shot: Dictionary, size: Vector2
 	# Draw twice: the first frame after a pose change can still show the old one.
 	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
+	if not write_capture:
+		return true
 	var img := vp.get_texture().get_image()
 	var ok := img.get_size() == size
 	if not ok:
 		push_error("image size %s differs from the sheet's %s" % [str(img.get_size()), str(size)])
 	var id := str(shot["id"])
-	img.save_png(out_dir.path_join(id + ".png"))
+	var save_error := img.save_png(out_dir.path_join(id + ".png"))
+	if save_error != OK:
+		push_error("cannot save capture PNG (error %d)" % save_error)
+		return false
 	var q2 := camera.global_transform.basis.get_rotation_quaternion()
 	if q2.w < 0.0:
 		q2 = Quaternion(-q2.x, -q2.y, -q2.z, -q2.w)
@@ -145,11 +166,15 @@ func _capture(vp: SubViewport, camera: Camera3D, shot: Dictionary, size: Vector2
 		"rendering": {"method": RenderingServer.get_current_rendering_method(), "driver": RenderingServer.get_current_rendering_driver_name()},
 		"physics_engine": str(ProjectSettings.get_setting("physics/3d/physics_engine")),
 		"size": {"width": img.get_width(), "height": img.get_height()},
-		"camera": {"position": [gp.x, gp.y, gp.z], "quaternion": [q2.x, q2.y, q2.z, q2.w], "fov": camera.fov, "near": camera.near, "far": camera.far},
+		"camera": {"type": "perspective", "position": [gp.x, gp.y, gp.z], "quaternion": [q2.x, q2.y, q2.z, q2.w], "fov": camera.fov, "near": camera.near, "far": camera.far},
 		"notes": built.get("notes", []),
+		"captureDefinition": options["capture_definition"],
 	}
 	var f := FileAccess.open(out_dir.path_join(id + ".json"), FileAccess.WRITE)
-	f.store_string(JSON.stringify(meta, "  ", false) + "\n")
+	if f == null:
+		push_error("cannot save capture sidecar")
+		return false
+	f.store_string(JSON.stringify(meta, "  ", false, true) + "\n")
 	f.close()
 	print("captured ", id, " ", img.get_size())
 	return ok

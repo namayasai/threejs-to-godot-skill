@@ -67,9 +67,11 @@ if [ $CONTROLS -eq 1 ]; then
     godot_capture "control-$name" ${extra[@]+"${extra[@]}"} || { STATUS=1; continue; }
     node "$SCRIPTS/compare-shots.mjs" --ref "$OUT/three" --test "$OUT/control-$name" --shots "$EX/shots.json" --thresholds "$EX/thresholds.json" --out "$OUT/compare-control-$name" > "$OUT/compare-control-$name.txt"
     if [ $? -eq 3 ]; then
-      factor=$(node -e "const r=require('$OUT/compare-control-$name/report.json'); process.stdout.write(String(r.summary.maxFailFactor))")
-      if node -e "process.exit(Number('$factor') >= 2 ? 0 : 1)"; then echo "control $name: fails as expected (worst check is $factor times its limit)"
-      else echo "control $name: fails, but only $factor times its limit (need 2 or more): the thresholds are too loose"; STATUS=1; fi
+      # Camera metadata detects wrong viewpoints, but does not demonstrate visual
+      # sensitivity. In particular, the FOV control must fail the image metrics.
+      factor=$(node -e "const r=require('$OUT/compare-control-$name/report.json'); process.stdout.write(String(r.summary.maxVisualFailFactor))")
+      if node -e "process.exit(Number('$factor') >= 2 ? 0 : 1)"; then echo "control $name: fails as expected (worst visual check is $factor times its limit)"
+      else echo "control $name: fails, but visual checks are only $factor times their limits (need 2 or more): the thresholds are too loose"; STATUS=1; fi
     else echo "control $name: DID NOT FAIL (thresholds too loose, or the control does nothing)"; STATUS=1; fi
   done < <(cfg controls)
 fi

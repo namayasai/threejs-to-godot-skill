@@ -40,6 +40,8 @@ export GODOT=/path/to/Godot_4.7_executable
 node scripts/doctor.mjs
 ```
 
+Set `TG_CHROMIUM_EXECUTABLE=/path/to/chromium` only when intentionally using an existing Chromium instead of the pinned download; record its actual version.
+
 `doctor.mjs` checks the Node version, three, Chromium with WebGL, the Godot version, and a windowed Godot draw (a test image read back from a `SubViewport`). Check the free disk space first: Chromium and node_modules take several hundred megabytes (estimate).
 
 **Done when** every line of `doctor.mjs` says OK. If one fails, fix it before going on.
@@ -82,9 +84,11 @@ Write `shots.json` with 3 to 13 viewpoints. Format: `scripts/lib/shots.mjs`, exa
 - text, thin lines or outlines if the scene has them
 - moments that depend on state, named by event and not by clock time
 
+The shot camera uses world-space position/orientation and an effective vertical `fov`; use `camera.getEffectiveFOV()` when deriving it from a zoomed source camera. Fixed capture clears source zoom/view cropping and sizes the render canvas to the sheet.
+
 Add probe points (7 by 7 pixels) at the lit floor, a shaded floor, and each material. Name two of them as the shadow and the light for the shade ratio: `"flags": { "shadeRatio": { "shade": "<probe name>", "lit": "<probe name>" } }`. Other flags: `flatBackground` (checks the two top corners) and `outline` (checks the share of dark pixels).
 
-**`at.step`.** An optional integer per shot: the number of steps to advance before that shot, counted from the scene's current state. The scene is not reloaded between shots, so steps add up in sheet order (a shot at 40 followed by a shot at 66 is captured after 106 steps in all). Order the sheet by time, or capture a late shot alone with `--only <id>` so it starts from step 0 (both capture tools take `--only`). On the three.js side the harness calls your scene's `step(n)` once with that number; what a step is (its length) is up to your `step` function. On the Godot side n is n physics ticks (`physics_ticks_per_second`); with `--fixed-fps 120` the two draw frames before the image is read add one or two more ticks [measured; without `--fixed-fps` they added 3 to 12], so expect the Godot image to be 1 to 2 ticks past step n for state that changes every tick. Make your three.js steps the same length as the Godot ticks. The tools read only the number. Name the moment by its event in the shot's `id` and `purpose` ("contact"), and keep a table from event names to step numbers in your scene code.
+**`at.step`.** An optional integer per shot: the number of steps to advance before that shot, counted from the scene's current state. The scene is not reloaded between shots, so steps add up in sheet order (a shot at 40 followed by a shot at 66 is captured after 106 steps in all). Order the sheet by time. `--only <id>` limits saved images; both capture tools still traverse the complete sheet and advance skipped shots so the requested timeline remains the same. On the three.js side the harness calls your scene's `step(n)` once with that number; what a step is (its length) is up to your `step` function. On the Godot side n is n physics ticks (`physics_ticks_per_second`); with `--fixed-fps 120` the two draw frames before the image is read add one or two more ticks [measured; without `--fixed-fps` they added 3 to 12], so expect the Godot image to be 1 to 2 ticks past step n for state that changes every tick. Make your three.js steps the same length as the Godot ticks. The tools read only the number. Name the moment by its event in the shot's `id` and `purpose` ("contact"), and keep a table from event names to step numbers in your scene code.
 
 ```
 node scripts/capture-three.mjs --module scene.mjs --shots shots.json --out out/three
@@ -145,7 +149,7 @@ node scripts/compare-shots.mjs --ref out/three --test out/godot --shots shots.js
 
 Run Godot with a timeout and send its output to a log file. Headless mode does not draw, so captures need a window; tests can be headless.
 
-`compare-shots.mjs` checks, per shot: image size, camera pose and fov, mean absolute difference, mean L*, 16 by 9 block L* (maximum and 95th percentile), hue shares, probe patches, shadow ratio, background corners, dark-pixel ratio for outlines. Exit code 0 means all pass, 3 means a check failed, 1 means the tool failed. The defaults are initial proposals, not derived statistically. In the examples each threshold was set to at least twice the measured value (the dark-pixel ratio is a band), and every negative control had to fail by at least 2 times its limit. Calibrate on your scene, and say so when you loosen a limit.
+`compare-shots.mjs` requires valid `<id>.json` sidecars with camera type/pose and `captureDefinition` matching the current size and full ordered camera/step timeline. Missing/malformed sidecars and stale captures are tool errors, not PASS. Re-capture older outputs; use `--image-only` only for an explicitly image-only comparison and report that camera/provenance checks were skipped. It checks, per shot: image size, camera pose and fov, mean absolute difference, mean L*, 16 by 9 block L* (maximum and 95th percentile), hue shares, probe patches, shadow ratio, background corners, dark-pixel ratio for outlines. Exit code 0 means all pass, 3 means a check failed, 1 means the tool failed. The defaults are initial proposals, not derived statistically. In the examples each threshold was set to at least twice the measured value (the dark-pixel ratio is a band), and every visual negative control must fail an image check by at least 2 times its limit; camera metadata alone does not establish image-threshold sensitivity. Calibrate on your scene, and say so when you loosen a limit.
 
 Open every image under `out/compare/compare/` (reference on top, Godot below). One line per image.
 
@@ -184,7 +188,7 @@ For each claim, the number or the image behind it. Include versions, the machine
 | `scripts/capture-three.mjs` | `--module` or `--page`, `--shots`, `--out`, `--only` | `<id>.png`, `<id>.json` per shot |
 | `scripts/godot/capture_godot.gd` (via `capture.tscn`) | see stage 4 | `<id>.png`, `<id>.json` per shot. `--probe` draws a test image |
 | `scripts/godot/apply_settings.gd`, `build_scene.gd` | settings dictionary, glb path, options | environment, lights, camera as Godot nodes; a list of approximations |
-| `scripts/compare-shots.mjs` | `--ref`, `--test`, `--shots`, `--out`, `--thresholds`, `--diff` | `compare/<id>.png`, `diff/<id>.png`, `report.json`, `report.md`. Exit 0 pass, 3 fail, 1 tool failure |
+| `scripts/compare-shots.mjs` | `--ref`, `--test`, `--shots`, `--out`, `--thresholds`, `--diff`, `--image-only` | `compare/<id>.png`, `diff/<id>.png`, `report.json`, `report.md`. Exit 0 pass, 3 fail, 1 tool failure |
 | `scripts/doctor.mjs` | `--skip-godot` | OK or NG per check |
 | `scripts/godot/run_tests.gd` | `--cases`, `--only` | `ALL TESTS PASSED (...)` or `FAILED (...)` |
 
@@ -205,7 +209,7 @@ Where a tool can detect the case it warns or stops with a message; for the rest,
 | `Fog` and `FogExp2` | The settings carry them, but the curves differ: three.js `Fog` blends with `smoothstep(near, far, depth)` and `FogExp2` with `1 - exp(-density^2 * depth^2)` [source]; Godot has its own. The brightness match was not measured. `dump-settings.mjs` warns | Compare a shot with fog and tune `fog_depth_curve` or the density by eye and by number |
 | A JavaScript physics engine in the original (for example `cannon-es`) | There is no tool to record its behavior. Module mode cannot import it (see stage 0) | Record the reference as described in `references/physics.md`, section 6 |
 
-Not tested at all: three.js before r155 (its light units differ, so the PI rule may not hold), and any operating system other than macOS.
+Not tested: three.js before r155 (its light units differ, so the PI rule may not hold), and end-to-end rendering parity on operating systems other than macOS. Linux headless/unit regressions do not establish rendered parity.
 
 ## 13. Looking up a symptom
 
